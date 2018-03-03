@@ -1,5 +1,10 @@
 package com.scarabcoder.commandapi2.example
 
+import com.scarabcoder.commandapi2.Argument
+import com.scarabcoder.commandapi2.Command
+import com.scarabcoder.commandapi2.CommandSection
+import org.bukkit.Bukkit
+import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import java.util.*
 
@@ -29,42 +34,49 @@ import java.util.*
  */
 class ExampleCommand(name: String): CommandSection(name) {
 
-    init {
-
-    }
-
     /**
      * Function when the command is sent without arguments.
      */
-    override fun command(sender: Player){
+    override fun command(sender: CommandSender){
 
     }
 
     /**
      * Example of usage:
-     *       /example test
+     *       /example example arg
+     *       /example test arg
      */
-    @Command(aliases = Arrays.asList("ex", "exmp"), description = "An example command.")
+    @Command(aliases = ["test"], description = "An example command.")
     fun example(sender: Player, @Argument(name = "Ex. Arg") exArg: String) {
+        sender.sendMessage("Example command with argument: $exArg")
+    }
 
+    @Command
+    fun sender(sender: UUID){
+        Bukkit.getPlayer(sender).sendMessage("Example of custom sender type (UUID instead of Player): $sender")
     }
 
     /**
      * Example of usage:
-     *      /sentence This is my sentence.
+     *      /sentence Hello World
      */
-    @Command(aliases = Arrays.asList("sen"), description = "Example of multi-word sentences")
-    fun sentence(sender: Player, @Argument(vararg = true) sentence: String){
-
+    @Command(aliases = ["sen"], description = "Example of multi-word arguments")
+    fun sentence(sender: Player, @Argument(sentence = true) sentence: String){
+        sender.sendMessage("Example of a multi-word argument: $sentence")
     }
 
     /**
      * Example of usage:
      *      /player ScarabCoder
      */
-    @Command(aliases = "pl", description = "Casting to objects using custom or default casters")
+    @Command(aliases = ["pl"], description = "Casting to objects using custom or default casters")
     fun player(sender: Player, player: Player){
+        sender.sendMessage("Example of type arguments using type converters: ${player.name}")
+    }
 
+    @Command(description = "Create a team with the given name.")
+    fun create(sender: Player, @Argument(name = "Team Name") teamName: String){
+        //Create a team with the teamName parameter
     }
 
 }
