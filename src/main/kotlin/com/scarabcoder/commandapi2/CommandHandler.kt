@@ -181,18 +181,28 @@ internal object CommandHandler {
 
     }
 
+    fun getPage(pages: List<String>, page: Int): List<String> {
+        val linesPerPage = 9
+        val pageStart = 0 + (linesPerPage * page - 1)
+        val pageEnd = pageStart + linesPerPage
+        val maxPages = (Math.ceil(pages.size.toDouble() / linesPerPage.toDouble())).toInt()
+        return pages
+    }
+
     fun getHelpCmd(section: CommandSection): String {
         return "/" + if(section.parentPath == "") "" else section.parentPath + " " + section.name + " help [page]"
     }
 
     fun getHelpStrings(section: CommandSection, index: Int = 1): List<String> {
-        val index = index - 1
-        val maxLines = 10
+        val index = (index - 1).constrainMin(1)
+        var linesPerPage = 9
         val usageTemplate = "${ChatColor.GOLD}%cmd%: ${ChatColor.WHITE}%description%"
         val lines = ArrayList<String>()
         val header = "${ChatColor.YELLOW}--------- ${ChatColor.WHITE}Help: ${section.readableName} ${ChatColor.GRAY}(%page%/%pages%) ${ChatColor.YELLOW}-----------------"
-
-        lines.add(header)
+        if(section.description != ""){
+            linesPerPage--
+        }
+        //lines.add(header)
         for(subSection in section.sections){
             lines.add(usageTemplate.replace("%cmd%", "/${subSection.value.parentPath} (${subSection.value.name}) ...").replace("%description%", subSection.value.description))
         }
@@ -206,10 +216,15 @@ internal object CommandHandler {
         if(index >= lines.size){
 
         }
-        val displayLines = lines.subList(Ints.constrainToRange(0 + index * 10, 0, lines.size - 1), Ints.constrainToRange(10 + index * 10, 0, lines.size - 1))
-        val maxPages = Math.ceil(lines.size.toDouble() / 10.toDouble())
-        lines[0] = lines[0].replace("%page%", Ints.constrainToRange(index,1, maxPages.toInt()).toString()).replace("%pages%", maxPages.toInt().toString())
-        return lines
+        val maxPages = (Math.ceil((lines.size - 1).toDouble() / linesPerPage.toDouble())).toInt()
+        val pageStart =  (linesPerPage * index - 1).constrain(0, maxPages)
+        val pageEnd = (pageStart + linesPerPage).constrain(0, maxPages)
+        val displayLines = lines.subList(pageStart, pageEnd)
+
+        displayLines.add(0, header.replace("%page%", Ints.constrainToRange(index,1, maxPages.toInt()).toString()).replace("%pages%", maxPages.toInt().toString()))
+        if(section.description != "")
+            displayLines.add(1, "${ChatColor.GRAY}${section.description}")
+        return displayLines
     }
 
 
