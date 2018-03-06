@@ -33,9 +33,14 @@ abstract class CommandSection(val name: String) {
 
     internal val sections: HashMap<String, CommandSection> = HashMap()
     internal var parentPath: String = ""
+    internal val fullPath
+        get() = "$parentPath$name"
+    internal val helpCmd
+        get() = "/$fullPath help [page]"
+
     fun section(section: CommandSection) {
         sections.put(section.name, section)
-        section.parentPath = "$parentPath $name"
+        section.parentPath = "${parentPath.keepSpaceAfter()}$name"
     }
 
     fun showHelp(player: CommandSender, index: Int = 0) {

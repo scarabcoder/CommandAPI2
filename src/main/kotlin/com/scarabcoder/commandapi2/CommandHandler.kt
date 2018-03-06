@@ -4,23 +4,24 @@ import com.google.common.primitives.Ints
 import com.scarabcoder.commandapi2.CommandRegistry.getCmdUsage
 import com.scarabcoder.commandapi2.CommandRegistry.getParamName
 import com.scarabcoder.commandapi2.exception.ArgumentParseException
+import com.scarabcoder.commandapi2.exception.ArgumentTypesException
 import com.scarabcoder.commandapi2.exception.CommandException
 import org.bukkit.ChatColor
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
 import org.bukkit.command.ConsoleCommandSender
 import org.bukkit.entity.Player
+import org.bukkit.util.StringUtil
 import java.util.*
-import java.util.stream.Collectors
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 import kotlin.reflect.KCallable
 import kotlin.reflect.KClass
+import kotlin.reflect.KFunction
 import kotlin.reflect.KParameter
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.isSubclassOf
-import kotlin.reflect.full.isSuperclassOf
-import kotlin.reflect.full.memberFunctions
+import com.scarabcoder.commandapi2.Command as CmdAnn
 
 
 /*
@@ -48,7 +49,36 @@ import kotlin.reflect.full.memberFunctions
  */
 internal object CommandHandler {
 
-    class BukkitCommand(val section: CommandSection): Command(section.name, section.description, section.usage, section.aliases){
+    class RootCommandHandler(val section: CommandSection): Command(section.name, section.description, section.usage, section.aliases){
+
+        override fun tabComplete(sender: CommandSender, alias: String, args: Array<out String>): MutableList<String> {
+            val modifiedArgs = args.toMutableList()
+            var section = section
+            var possibilities: MutableList<String> = ArrayList()
+            val tree = getTree(section)
+            for((x, _) in args.toMutableList().withIndex()){
+                val node = modifiedArgs.subList(0, args.size - x).joinToString(separator = " ")
+                if(tree.containsKey(section.name + " " + node)){
+                    section = tree[section.name + " " + node]!!
+                    modifiedArgs.removeAll(modifiedArgs.subList(0, x))
+                    break
+                }
+            }
+            val cmdFunc = section::class.findMember(modifiedArgs.first())
+            if(cmdFunc != null && cmdFunc.hasAnnotation<CmdAnn>()){
+                return Collections.emptyList()
+            }
+
+            for(subSection in section.sections){
+                possibilities.add(subSection.key)
+            }
+            section::class.members.filter { it.findAnnotation<CmdAnn>() != null }
+                    .forEach { possibilities.add(it.name) }
+            possibilities = possibilities.filter { it.startsWith(modifiedArgs.last(), ignoreCase = true) }.toMutableList()
+            return ArrayList(HashSet<String>(possibilities))
+        }
+
+
         override fun execute(sender: CommandSender?, cmd: String?, args: Array<out String>?): Boolean {
             val args = args!!.toMutableList()
             var path = section.name
@@ -62,7 +92,7 @@ internal object CommandHandler {
             //Start with the full argument list, and decrease by one until match is found in command section tree,
             //then update the arguments list to remove the path of the section that was found.
             for((x, _) in args.toMutableList().withIndex()){
-                val node = args.subList(args.size - x - 1, args.size - 1).joinToString(separator = " ")
+                val node = args.subList(0, args.size - x).joinToString(separator = " ")
                 if(tree.containsKey(section.name + " " + node)){
                     section = tree[section.name + " " + node]!!
                     path = node
@@ -71,13 +101,16 @@ internal object CommandHandler {
                 }
             }
 
-            val cmds = section::class.members.filter { it.findAnnotation<com.scarabcoder.commandapi2.Command>() != null }.associate { it.name to it }
+            val cmds = section::class.members.filter { it.hasAnnotation<CmdAnn>() }.associate { it.name to it }
 
             if(args.isEmpty()){
                 section.command(sender!!)
                 return true
             }
+            //region Find the function using the first argument name as the key.
+            //Find the function by the argument name
             var cmdFunc = cmds[args[0]]
+            //If it wasn't found, check for aliases. If none exist, check for the hardcoded help command and send the help usages.
             if(cmdFunc == null){
                 if(args.size > 0 && args[0] == "help"){
                     try {
@@ -88,24 +121,27 @@ internal object CommandHandler {
                     return true
                 }
                 for((name, func) in cmds){
-                    if(func.findAnnotation<com.scarabcoder.commandapi2.Command>() != null){
-                        val cmdAnn = func.findAnnotation<com.scarabcoder.commandapi2.Command>()!!
+                    if(func.findAnnotation<CmdAnn>() != null){
+                        val cmdAnn = func.findAnnotation<CmdAnn>()!!
                         if(cmdAnn.aliases.isEmpty()) continue
-                        if(cmdAnn.aliases.contains(args[0]))
+                        if(cmdAnn.aliases.contains(args[0])){
                             cmdFunc = func
+                        }
                     }
                 }
             }
             args.removeAt(0) //Remove the function name, leaving just the arguments.
-            if(cmdFunc == null){
-                sender!!.sendMessage(Messages.commandNotFound.replace("\$c", getHelpCmd(section)))
-                return true
-            }
+            //endregion
 
-            if(cmdFunc.parameters.isEmpty()){
-                sender!!.sendMessage(Messages.commandNotFound.replace("\$c", getHelpCmd(section)))
+            //region Validate that the function exists and that it's setup somewhat correctly.
+            if(cmdFunc == null || cmdFunc.parameters.isEmpty()){
+                sender!!.sendMessage(Messages.commandNotFound.replace("\$c", section.helpCmd))
                 return true
             }
+            //endregion
+            val cmdAnn = cmdFunc.findAnnotation<CmdAnn>()!!
+
+            //region Check sender type and cast if needed/possible.
             val senderType = cmdFunc.parameters[1].type.classifier as KClass<*>
             sender!!
             var senderObj: Any = sender
@@ -125,52 +161,53 @@ internal object CommandHandler {
                         return true
                     }
                 }else{
-                    sender.sendMessage(Messages.commandNotFound.replace("\$c", getHelpCmd(section)))
+                    sender.sendMessage(Messages.commandNotFound.replace("\$c", section.helpCmd))
                     return true
                 }
             }
+            //endregion
+
+            //region Check sender permissions
+            if(!cmdAnn.noPerms){
+                val perm = if(cmdAnn.permission.isBlank()) getRootPermission(section) + ".${cmdFunc.name}" else cmdAnn.permission
+                if(!sender.hasPermission(perm)){
+                    sender.sendMessage(Messages.noPermission)
+                    return true
+                }
+            }
+            //endregion
+
+            //region Apply validators and check result
+            if(!cmdAnn.validators.isEmpty()){
+                for(validatorID in cmdAnn.validators){
+                    val valid = CommandValidator.getValidator(validatorID)!!.validate(sender)
+                    valid?.let {
+                        sender.sendMessage(valid)
+                        return true
+                    }
+                }
+            }
+            //endregion
+
+            //region Check and cast actual parameters
             val params = cmdFunc.parameters.toMutableList()
             params.removeAt(0) //Remove the instance as it isn't an argument
             params.removeAt(0) //Remove the sender as it isn't an argument
 
 
             val call: MutableMap<KParameter, Any?> = HashMap()
-            for((i, param) in params.withIndex()){
 
-                if(i == args.size){
-                    sender.sendMessage(Messages.invalidArguments.replace("\$u", "/$path ${getCmdUsage(cmdFunc)}"))
-                    return true
-                }
-                val argAnn = param.findAnnotation<Argument>()
-                if(argAnn != null && argAnn.sentence){
-                    val sent = args.subList(i, args.size)
-                    if(sent.size == 0){
+            try {
+                call.putAll(handleArgTyping(cmdFunc, args))
+            } catch (e: ArgumentTypesException){
+                when (e.reason) {
+                    ArgumentTypesException.Reason.INVALID_USAGE ->
                         sender.sendMessage(Messages.invalidArguments.replace("\$u", "/$path ${getCmdUsage(cmdFunc)}"))
-                        return true
-                    }
-                    call.put(param, args.subList(i, args.size).joinToString(separator = " "))
-                    break
+                    else -> sender.sendMessage(e.msg)
                 }
-
-                if(param.type.classifier!! == String::class){
-                    call.put(param, args[i])
-                    continue
-                }
-                try {
-                    call.put(param, ArgumentParsers.parse(args[i], param.type.classifier as KClass<*>))
-                } catch(e: ArgumentParseException){
-                    sender.sendMessage("${ChatColor.RED}Error with argument ${getParamName(param)}: ${e.name}")
-                    return true
-                } catch (e: CommandException){
-                    sender.sendMessage("${ChatColor.RED}There was an internal parsing error with argument ${getParamName(param)}: ${e.name}")
-                    return true
-                }
-                //User sent more arguments than is required.
-                if(i == params.size - 1 && args.size - 1 > i){
-                    sender.sendMessage(Messages.invalidArguments.replace("\$u", "/$path ${getCmdUsage(cmdFunc)}"))
-                    return true
-                }
+                return true
             }
+            //endregion
             call.put(cmdFunc.parameters[0], section) //Set the object instance
             call.put(cmdFunc.parameters[1], senderObj) //Re-add the sender to the function param list.
 
@@ -181,6 +218,111 @@ internal object CommandHandler {
 
     }
 
+    internal class SingleMultiCmdHandler(val function: KCallable<*>, val obj: Any): Command(function.name, "", "", Collections.emptyList()) {
+
+        private val cmdAnn = function.findAnnotation<CmdAnn>()!!
+
+        override fun getDescription(): String = cmdAnn.description
+        override fun getAliases(): MutableList<String> = cmdAnn.aliases.toMutableList()
+        override fun getUsage(): String = getCmdUsage(function)
+
+        override fun execute(sender: CommandSender, label: String, args: Array<out String>): Boolean {
+
+            val argTypes = function.parameters.toMutableList()
+            argTypes.removeAt(0) //Remove object instance, not an argument
+            argTypes.removeAt(0) //Remove sender parameter, not an argument
+            val toPass = HashMap<KParameter, Any>()
+
+            val senderType = function.parameters[1].type.classifier as KClass<*>
+            var senderObj: Any = sender
+            if(!senderType.isInstance(sender)){
+                when {
+                    senderType.isSubclassOf(ConsoleCommandSender::class) -> {
+                        sender.sendMessage(Messages.consoleOnly)
+                        return true
+                    }
+                    senderType.isSubclassOf(Player::class) -> {
+                        sender.sendMessage(Messages.playerOnly)
+                        return true
+                    }
+                    ArgumentParsers.supportsSender(senderType) -> try {
+                        val parsed = ArgumentParsers.parseSender(sender, senderType)
+                        senderObj = parsed
+                    } catch(e: ArgumentParseException){
+                        sender.sendMessage("${ChatColor.RED}Error: ${e.name}")
+                        return true
+                    }
+                    else -> {
+                        sender.sendMessage(Messages.consoleOnly)
+                        return true
+                    }
+                }
+
+            }
+            toPass.put(function.parameters[0], obj)
+            toPass.put(function.parameters[1], senderObj)
+
+            try {
+                toPass.putAll(handleArgTyping(function, args.toMutableList()))
+            } catch (e: ArgumentTypesException){
+                when (e.reason) {
+                    ArgumentTypesException.Reason.INVALID_USAGE ->
+                        sender.sendMessage(Messages.invalidArguments.replace("\$u", "/${getCmdUsage(function)}"))
+                    else -> sender.sendMessage(e.msg)
+                }
+                return true
+            }
+
+            function.callBy(toPass)
+
+            return true
+        }
+
+    }
+
+    private fun getRootPermission(section: CommandSection): String = section.fullPath.replace(" ", ".")
+
+    private fun handleArgTyping(function: KCallable<*>, args: MutableList<String>): Map<KParameter, Any> {
+        val toPass = HashMap<KParameter, Any>()
+        val params = function.parameters.toMutableList()
+        params.removeAt(0)
+        params.removeAt(0)
+        for((i, param) in params.withIndex()){
+
+            if(i >= args.size && !param.isOptional){
+                throw ArgumentTypesException(ArgumentTypesException.Reason.INVALID_USAGE)
+            }
+            if(param.isOptional) break
+            val argAnn = param.findAnnotation<Argument>()
+            if(argAnn != null && argAnn.sentence){
+                val sent = args.subList(i, args.size)
+                if(sent.size == 0){
+                    throw ArgumentTypesException(ArgumentTypesException.Reason.INVALID_USAGE)
+                }
+                toPass.put(param, args.subList(i, args.size).joinToString(separator = " "))
+                break
+            }
+
+            if(param.type.classifier!! == String::class){
+                toPass.put(param, args[i])
+                continue
+            }
+            try {
+                toPass.put(param, ArgumentParsers.parse(args[i], param.type.classifier as KClass<*>)!!)
+            } catch(e: ArgumentParseException){
+                throw ArgumentTypesException(ArgumentTypesException.Reason.ARG_PROCESS_ERROR, "${ChatColor.RED}Error with argument ${getParamName(param)}: ${e.name}")
+            } catch (e: CommandException){
+                throw ArgumentTypesException(ArgumentTypesException.Reason.INTERNAL_ERROR, "${ChatColor.RED}There was an internal parsing error with argument ${getParamName(param)}: ${e.name}")
+            }
+            //User sent more arguments than is required.
+            if(i == params.size - 1 && args.size - 1 > i){
+                throw ArgumentTypesException(ArgumentTypesException.Reason.INVALID_USAGE)
+            }
+        }
+
+        return toPass
+    }
+
     fun getPage(pages: List<String>, page: Int): List<String> {
         val linesPerPage = 9
         val pageStart = 0 + (linesPerPage * page - 1)
@@ -189,12 +331,8 @@ internal object CommandHandler {
         return pages
     }
 
-    fun getHelpCmd(section: CommandSection): String {
-        return "/" + if(section.parentPath == "") "" else section.parentPath + " " + section.name + " help [page]"
-    }
-
     fun getHelpStrings(section: CommandSection, index: Int = 1): List<String> {
-        val index = (index - 1).constrainMin(1)
+        val index = index.constrainMin(1)
         var linesPerPage = 9
         val usageTemplate = "${ChatColor.GOLD}%cmd%: ${ChatColor.WHITE}%description%"
         val lines = ArrayList<String>()
@@ -204,10 +342,11 @@ internal object CommandHandler {
         }
         //lines.add(header)
         for(subSection in section.sections){
-            lines.add(usageTemplate.replace("%cmd%", "/${subSection.value.parentPath} (${subSection.value.name}) ...").replace("%description%", subSection.value.description))
+            val pp = if(subSection.value.parentPath == "") " " else subSection.value.parentPath
+            lines.add(usageTemplate.replace("%cmd%", "/$pp ${subSection.value.name} ...").replace("%description%", subSection.value.description))
         }
-        section::class.members.filter { it.findAnnotation<com.scarabcoder.commandapi2.Command>() != null }.forEach {
-            val cmd = it.findAnnotation<com.scarabcoder.commandapi2.Command>()
+        section::class.members.filter { it.findAnnotation<CmdAnn>() != null }.forEach {
+            val cmd = it.findAnnotation<CmdAnn>()
             var path = section.parentPath
             if(path != "") path += " "
             val usage = getCmdUsage(it)
@@ -216,12 +355,12 @@ internal object CommandHandler {
         if(index >= lines.size){
 
         }
-        val maxPages = (Math.ceil((lines.size - 1).toDouble() / linesPerPage.toDouble())).toInt()
-        val pageStart =  (linesPerPage * index - 1).constrain(0, maxPages)
-        val pageEnd = (pageStart + linesPerPage).constrain(0, maxPages)
+        val maxPages = (Math.ceil((lines.size - 1).constrainMin(1).toDouble() / linesPerPage.toDouble())).toInt()
+        val pageStart =  (linesPerPage * (index - 1)).constrain(0, lines.size - 1)
+        val pageEnd = (pageStart + linesPerPage).constrain(0, lines.size)
         val displayLines = lines.subList(pageStart, pageEnd)
 
-        displayLines.add(0, header.replace("%page%", Ints.constrainToRange(index,1, maxPages.toInt()).toString()).replace("%pages%", maxPages.toInt().toString()))
+        displayLines.add(0, header.replace("%page%", Ints.constrainToRange(index,1, maxPages).toString()).replace("%pages%", maxPages.toInt().toString()))
         if(section.description != "")
             displayLines.add(1, "${ChatColor.GRAY}${section.description}")
         return displayLines

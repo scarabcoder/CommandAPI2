@@ -1,6 +1,8 @@
-package com.scarabcoder.commandapi2
+package com.scarabcoder.commandapi2.example
 
-import org.bukkit.ChatColor
+import com.scarabcoder.commandapi2.Command
+import com.scarabcoder.commandapi2.CommandSection
+import org.bukkit.entity.Player
 
 
 /*
@@ -26,12 +28,13 @@ import org.bukkit.ChatColor
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-object Messages {
+class ExampleSubSection: CommandSection("sub") {
 
-    var commandNotFound = "${ChatColor.RED}Invalid usage, command not found. Type \$c for help."
-    var playerOnly = "${ChatColor.RED}Player-only command!"
-    var consoleOnly = "${ChatColor.RED}Console-only command!"
-    var invalidArguments = "${ChatColor.RED}Invalid usage, correct usage: \$u"
-    var noPermission = "${ChatColor.RED}You don't have permission to use this command!"
+    override val description = "An example subsection"
+
+    @Command
+    fun subtest(sender: Player, arg: String){
+        sender.sendMessage(arg)
+    }
 
 }

@@ -4,6 +4,7 @@ import com.scarabcoder.commandapi2.Argument
 import com.scarabcoder.commandapi2.Command
 import com.scarabcoder.commandapi2.CommandSection
 import org.bukkit.Bukkit
+import org.bukkit.ChatColor
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import java.util.*
@@ -34,6 +35,10 @@ import java.util.*
  */
 class ExampleCommand(name: String): CommandSection(name) {
 
+    init {
+        section(ExampleSubSection())
+    }
+
     /**
      * Function when the command is sent without arguments.
      */
@@ -63,6 +68,13 @@ class ExampleCommand(name: String): CommandSection(name) {
     @Command(aliases = ["sen"], description = "Example of multi-word arguments")
     fun sentence(sender: Player, @Argument(sentence = true) sentence: String){
         sender.sendMessage("Example of a multi-word argument: $sentence")
+    }
+
+    @Command
+    fun heal(sender: Player, toHeal: Player = sender){
+        sender.sendMessage("${ChatColor.GREEN}Healed ${toHeal.name}")
+        toHeal.health = 20.0
+
     }
 
     /**

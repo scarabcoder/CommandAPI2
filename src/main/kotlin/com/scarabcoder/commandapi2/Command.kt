@@ -1,7 +1,5 @@
 package com.scarabcoder.commandapi2
 
-import java.util.*
-
 
 /*
  * The MIT License
@@ -26,4 +24,8 @@ import java.util.*
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-annotation class Command(val description: String = "", val aliases: Array<String> = [])
+annotation class Command(val description: String = "",
+                         val aliases: Array<String> = [],
+                         val noPerms: Boolean = false,
+                         val permission: String = "",
+                         val validators: Array<String> = [])

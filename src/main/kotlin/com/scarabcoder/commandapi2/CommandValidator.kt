@@ -1,6 +1,6 @@
 package com.scarabcoder.commandapi2
 
-import org.bukkit.ChatColor
+import org.bukkit.command.CommandSender
 
 
 /*
@@ -26,12 +26,21 @@ import org.bukkit.ChatColor
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-object Messages {
+interface CommandValidator {
 
-    var commandNotFound = "${ChatColor.RED}Invalid usage, command not found. Type \$c for help."
-    var playerOnly = "${ChatColor.RED}Player-only command!"
-    var consoleOnly = "${ChatColor.RED}Console-only command!"
-    var invalidArguments = "${ChatColor.RED}Invalid usage, correct usage: \$u"
-    var noPermission = "${ChatColor.RED}You don't have permission to use this command!"
+    val validatorName: String
+
+    fun validate(sender: CommandSender): String?
+
+    companion object {
+
+        private val validators = HashMap<String, CommandValidator>()
+
+        fun registerValidator(validator: CommandValidator) {
+            validators.put(validator.validatorName, validator)
+        }
+
+        fun getValidator(validatorName: String): CommandValidator? = validators[validatorName]
+    }
 
 }
