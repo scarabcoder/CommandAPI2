@@ -56,7 +56,7 @@ class ExampleCommand(name: String): CommandSection(name) {
         sender.sendMessage("Example command with argument: $exArg")
     }
 
-    @Command
+
     fun sender(sender: UUID){
         Bukkit.getPlayer(sender).sendMessage("Example of custom sender type (UUID instead of Player): $sender")
     }

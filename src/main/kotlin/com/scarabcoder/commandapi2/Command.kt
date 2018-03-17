@@ -1,5 +1,7 @@
 package com.scarabcoder.commandapi2
 
+import kotlin.reflect.KClass
+
 
 /*
  * The MIT License
@@ -28,4 +30,4 @@ annotation class Command(val description: String = "",
                          val aliases: Array<String> = [],
                          val noPerms: Boolean = false,
                          val permission: String = "",
-                         val validators: Array<String> = [])
+                         val validators: Array<KClass<out CommandValidator<*>>> = [])

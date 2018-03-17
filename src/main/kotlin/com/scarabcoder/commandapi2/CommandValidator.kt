@@ -1,6 +1,7 @@
 package com.scarabcoder.commandapi2
 
 import org.bukkit.command.CommandSender
+import kotlin.reflect.KClass
 
 
 /*
@@ -26,21 +27,19 @@ import org.bukkit.command.CommandSender
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-interface CommandValidator {
+interface CommandValidator<in T> {
 
-    val validatorName: String
-
-    fun validate(sender: CommandSender): String?
+    fun validate(sender: T): Boolean
 
     companion object {
 
-        private val validators = HashMap<String, CommandValidator>()
+        private val validators = HashMap<KClass<out CommandValidator<*>>, CommandValidator<*>>()
 
-        fun registerValidator(validator: CommandValidator) {
-            validators.put(validator.validatorName, validator)
+        fun registerValidator(validator: CommandValidator<*>) {
+            validators.put(validator::class, validator)
         }
 
-        fun getValidator(validatorName: String): CommandValidator? = validators[validatorName]
+        fun getValidator(validator: KClass<out CommandValidator<*>>): CommandValidator<*>? = validators[validator]
     }
 
 }

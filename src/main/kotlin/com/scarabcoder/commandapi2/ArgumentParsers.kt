@@ -3,11 +3,13 @@ package com.scarabcoder.commandapi2
 import com.scarabcoder.commandapi2.exception.ArgumentParseException
 import com.scarabcoder.commandapi2.exception.CommandException
 import org.bukkit.Bukkit
+import org.bukkit.OfflinePlayer
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import java.util.HashMap
 import java.util.function.Function
 import kotlin.reflect.KClass
+import kotlin.reflect.full.isSubclassOf
 
 
 /*
@@ -35,62 +37,55 @@ import kotlin.reflect.KClass
  */
 object ArgumentParsers {
 
-    private val arguments = HashMap<KClass<*>, Function<String, Any?>>()
-    private val senderArgs = HashMap<KClass<*>, Function<CommandSender, Any>>()
+    private val arguments = HashMap<KClass<*>, (String) -> Any>()
+    private val senderArgs = HashMap<KClass<*>, (CommandSender) -> Any>()
+    private val test = HashMap<KClass<*>, (String) -> Any>()
 
     init {
-
-        arguments.put(Int::class, Function {
-            t: String ->  {
-            try {
-                t.toInt()
-            } catch(e: NumberFormatException) {
-                throw ArgumentParseException("$t is not a number!")
-            }
-        }.invoke()
+        arguments.put(Int::class, {
+            if(it.toIntOrNull() == null) throw ArgumentParseException("$it is not a number!")
+            it.toInt()
         })
-        arguments.put(Double::class, Function {
-            t: String ->  {
-            try {
-                t.toDouble()
-            } catch(e: NumberFormatException) {
-                throw ArgumentParseException("$t is not a number!")
-            }
-        }.invoke()
+        arguments.put(Double::class, {
+            if(it.toDoubleOrNull() == null) throw ArgumentParseException("$it is not a valid number!")
+            it.toDouble()
         })
-        arguments.put(Player::class, Function {
-            t: String ->  {
-            val p: Player? = Bukkit.getPlayer(t) ?: throw ArgumentParseException("Player \"$t\" not found!")
-            p
-
-        }.invoke()
+        arguments.put(Player::class, {
+            if(Bukkit.getPlayer(it) == null) throw ArgumentParseException("Player $it not found!")
+            Bukkit.getPlayer(it)
         })
 
 
 
     }
 
+
+
     fun parseSender(sender: CommandSender, to: KClass<*>): Any {
         if(!supportsSender(to)) throw IllegalArgumentException("Cannot cast to type $to!")
-        return senderArgs[to]!!.apply(sender)
+        return senderArgs[to]!!.invoke(sender)
     }
 
     internal fun supportsSender(type: KClass<*>): Boolean{
         return senderArgs.containsKey(type)
     }
 
-    fun registerArgument(type: KClass<*>, func: Function<String, Any?>){
+    fun registerArgument(type: KClass<*>, func: (String) -> Any){
         arguments.put(type, func)
     }
 
-    fun registerSenderType(type: KClass<*>, func: Function<CommandSender, Any>){
+    fun registerSenderType(type: KClass<*>, func: (CommandSender) -> Any){
         senderArgs.put(type, func)
     }
 
     @Throws(ArgumentParseException::class)
     internal fun parse(arg:String, clazz: KClass<*>): Any? {
         if(arguments.containsKey(clazz)){
-            return arguments[clazz]!!.apply(arg)
+            return arguments[clazz]!!.invoke(arg)
+        }
+        if(clazz.java.isEnum){
+            return clazz.java.enumConstants.firstOrNull { (it as Enum<*>).name.equals(arg, true) } ?:
+                    throw ArgumentParseException("Possible values: " + clazz.java.enumConstants.joinToString(separator = " ").toLowerCase())
         }
         throw CommandException("Could not find a casting function for String -> " + clazz.simpleName + " (contact a developer)")
     }

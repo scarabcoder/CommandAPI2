@@ -179,13 +179,10 @@ internal object CommandHandler {
 
             //region Apply validators and check result
             if(!cmdAnn.validators.isEmpty()){
-                for(validatorID in cmdAnn.validators){
-                    val valid = CommandValidator.getValidator(validatorID)!!.validate(sender)
-                    valid?.let {
-                        sender.sendMessage(valid)
-                        return true
-                    }
-                }
+                cmdAnn.validators
+                        .map { (CommandValidator.getValidator(it)!! as CommandValidator<Any>).validate(senderObj) }
+                        .filterNot { it }
+                        .forEach { return true }
             }
             //endregion
 
@@ -292,7 +289,7 @@ internal object CommandHandler {
             if(i >= args.size && !param.isOptional){
                 throw ArgumentTypesException(ArgumentTypesException.Reason.INVALID_USAGE)
             }
-            if(param.isOptional) break
+            if(param.isOptional && i >= args.size) break
             val argAnn = param.findAnnotation<Argument>()
             if(argAnn != null && argAnn.sentence){
                 val sent = args.subList(i, args.size)
@@ -331,7 +328,7 @@ internal object CommandHandler {
         return pages
     }
 
-    fun getHelpStrings(section: CommandSection, index: Int = 1): List<String> {
+    fun getHelpStrings(section: CommandSection, sender: CommandSender, index: Int = 1): List<String> {
         val index = index.constrainMin(1)
         var linesPerPage = 9
         val usageTemplate = "${ChatColor.GOLD}%cmd%: ${ChatColor.WHITE}%description%"
@@ -346,17 +343,19 @@ internal object CommandHandler {
             lines.add(usageTemplate.replace("%cmd%", "/$pp ${subSection.value.name} ...").replace("%description%", subSection.value.description))
         }
         section::class.members.filter { it.findAnnotation<CmdAnn>() != null }.forEach {
-            val cmd = it.findAnnotation<CmdAnn>()
-            var path = section.parentPath
-            if(path != "") path += " "
-            val usage = getCmdUsage(it)
-            lines.add(usageTemplate.replace("%cmd%", "/$path${section.name} ${usage.substring(0, usage.length - 1)}").replace("%description%", cmd!!.description))
+            val cmd = it.findAnnotation<CmdAnn>()!!
+            if(cmd.noPerms || sender.hasPermission(cmd.permission)) {
+                var path = section.parentPath
+                if (path != "") path += " "
+                val usage = getCmdUsage(it)
+                lines.add(usageTemplate.replace("%cmd%", "/$path${section.name} ${usage.substring(0, usage.length - 1)}").replace("%description%", cmd!!.description))
+            }
         }
         if(index >= lines.size){
 
         }
         val maxPages = (Math.ceil((lines.size - 1).constrainMin(1).toDouble() / linesPerPage.toDouble())).toInt()
-        val pageStart =  (linesPerPage * (index - 1)).constrain(0, lines.size - 1)
+        val pageStart =  (linesPerPage * (index - 1)).constrain(0, (lines.size - 1).constrainMin(0))
         val pageEnd = (pageStart + linesPerPage).constrain(0, lines.size)
         val displayLines = lines.subList(pageStart, pageEnd)
 

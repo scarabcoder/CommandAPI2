@@ -44,7 +44,7 @@ abstract class CommandSection(val name: String) {
     }
 
     fun showHelp(player: CommandSender, index: Int = 0) {
-        CommandHandler.getHelpStrings(this, index).forEach { player.sendMessage(it) }
+        CommandHandler.getHelpStrings(this, player, index).forEach { player.sendMessage(it) }
     }
 
     internal fun getChildren(): HashMap<String, CommandSection> {
