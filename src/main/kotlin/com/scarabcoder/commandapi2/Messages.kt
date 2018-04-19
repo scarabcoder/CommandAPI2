@@ -33,5 +33,7 @@ object Messages {
     var consoleOnly = "${ChatColor.RED}Console-only command!"
     var invalidArguments = "${ChatColor.RED}Invalid usage, correct usage: \$u"
     var noPermission = "${ChatColor.RED}You don't have permission to use this command!"
+    var helpHeader = "${ChatColor.YELLOW}--------- ${ChatColor.WHITE}Help: %section% ${ChatColor.GRAY}(%page%/%pages%) ${ChatColor.YELLOW}-----------------"
+    var commandUsage = "${ChatColor.GOLD}%cmd%: ${ChatColor.WHITE}%description%"
 
 }

@@ -6,6 +6,8 @@ import com.scarabcoder.commandapi2.CommandRegistry.getParamName
 import com.scarabcoder.commandapi2.exception.ArgumentParseException
 import com.scarabcoder.commandapi2.exception.ArgumentTypesException
 import com.scarabcoder.commandapi2.exception.CommandException
+import com.scarabcoder.commons.constrain
+import com.scarabcoder.commons.constrainMin
 import org.bukkit.ChatColor
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
@@ -15,10 +17,7 @@ import org.bukkit.util.StringUtil
 import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
-import kotlin.reflect.KCallable
-import kotlin.reflect.KClass
-import kotlin.reflect.KFunction
-import kotlin.reflect.KParameter
+import kotlin.reflect.*
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.isSubclassOf
 import com.scarabcoder.commandapi2.Command as CmdAnn
@@ -66,7 +65,7 @@ internal object CommandHandler {
             }
             val cmdFunc = section::class.findMember(modifiedArgs.first())
             if(cmdFunc != null && cmdFunc.hasAnnotation<CmdAnn>()){
-                return Collections.emptyList()
+                return super.tabComplete(sender, alias, args)
             }
 
             for(subSection in section.sections){
@@ -96,7 +95,7 @@ internal object CommandHandler {
                 if(tree.containsKey(section.name + " " + node)){
                     section = tree[section.name + " " + node]!!
                     path = node
-                    args.removeAll(args.subList(0, x))
+                    args.removeAll(args.subList(0, args.size - x))
                     break
                 }
             }
@@ -256,6 +255,21 @@ internal object CommandHandler {
                 }
 
             }
+            val perm = if(cmdAnn.permission == "") function.name else cmdAnn.permission
+            if(!sender.hasPermission(perm)){
+                sender.sendMessage(Messages.noPermission)
+                return true
+            }
+
+            //region Apply validators and check result
+            if(!cmdAnn.validators.isEmpty()){
+                cmdAnn.validators
+                        .map { (CommandValidator.getValidator(it)!! as CommandValidator<Any>).validate(senderObj) }
+                        .filterNot { it }
+                        .forEach { return true }
+            }
+            //endregion
+
             toPass.put(function.parameters[0], obj)
             toPass.put(function.parameters[1], senderObj)
 
@@ -331,24 +345,24 @@ internal object CommandHandler {
     fun getHelpStrings(section: CommandSection, sender: CommandSender, index: Int = 1): List<String> {
         val index = index.constrainMin(1)
         var linesPerPage = 9
-        val usageTemplate = "${ChatColor.GOLD}%cmd%: ${ChatColor.WHITE}%description%"
         val lines = ArrayList<String>()
-        val header = "${ChatColor.YELLOW}--------- ${ChatColor.WHITE}Help: ${section.readableName} ${ChatColor.GRAY}(%page%/%pages%) ${ChatColor.YELLOW}-----------------"
+        //val header = "${ChatColor.YELLOW}--------- ${ChatColor.WHITE}Help: ${section.readableName} ${ChatColor.GRAY}(%page%/%pages%) ${ChatColor.YELLOW}-----------------"
         if(section.description != ""){
             linesPerPage--
         }
         //lines.add(header)
         for(subSection in section.sections){
             val pp = if(subSection.value.parentPath == "") " " else subSection.value.parentPath
-            lines.add(usageTemplate.replace("%cmd%", "/$pp ${subSection.value.name} ...").replace("%description%", subSection.value.description))
+            lines.add(Messages.commandUsage.replace("%cmd%", "/$pp ${subSection.value.name} ...").replace("%description%", subSection.value.description))
         }
         section::class.members.filter { it.findAnnotation<CmdAnn>() != null }.forEach {
+            it as KFunction
             val cmd = it.findAnnotation<CmdAnn>()!!
             if(cmd.noPerms || sender.hasPermission(cmd.permission)) {
                 var path = section.parentPath
                 if (path != "") path += " "
                 val usage = getCmdUsage(it)
-                lines.add(usageTemplate.replace("%cmd%", "/$path${section.name} ${usage.substring(0, usage.length - 1)}").replace("%description%", cmd!!.description))
+                lines.add(Messages.commandUsage.replace("%cmd%", "/$path${section.name} ${usage.substring(0, usage.length - 1)}").replace("%description%", it.getDescription(section) ?: ""))
             }
         }
         if(index >= lines.size){
@@ -359,12 +373,23 @@ internal object CommandHandler {
         val pageEnd = (pageStart + linesPerPage).constrain(0, lines.size)
         val displayLines = lines.subList(pageStart, pageEnd)
 
-        displayLines.add(0, header.replace("%page%", Ints.constrainToRange(index,1, maxPages).toString()).replace("%pages%", maxPages.toInt().toString()))
+        displayLines.add(0, Messages.helpHeader.replace("%section%", section.readableName).replace("%page%", index.constrain(1, maxPages).toString()).replace("%pages%", maxPages.toInt().toString()))
         if(section.description != "")
             displayLines.add(1, "${ChatColor.GRAY}${section.description}")
         return displayLines
     }
 
+
+    fun KFunction<*>.getDescription(section: CommandSection): String? {
+        val descField = section::class.findMember("${this.name}Desc")
+        if(descField != null && descField is KProperty && descField.returnType.classifier == String::class) {
+            return descField.getter.call(section) as String
+        }
+        val ann = this.findAnnotation<CmdAnn>()
+        if(ann != null && ann.description != "") return ann.description
+        return null
+
+    }
 
 
 

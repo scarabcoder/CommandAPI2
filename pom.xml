@@ -6,7 +6,7 @@
 
     <groupId>com.scarabcoder</groupId>
     <artifactId>command-api2</artifactId>
-    <version>1.1.5-SNAPSHOT</version>
+    <version>1.2.6-SNAPSHOT</version>
 
     <distributionManagement>
         <repository>
@@ -39,6 +39,11 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.scarabcoder</groupId>
+            <artifactId>scarab-commons</artifactId>
+            <version>1.4.1-SNAPSHOT</version>
+        </dependency>
         <!--Spigot API-->
         <dependency>
             <groupId>org.spigotmc</groupId>

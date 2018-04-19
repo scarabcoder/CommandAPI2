@@ -55,7 +55,9 @@ object ArgumentParsers {
             Bukkit.getPlayer(it)
         })
 
-
+        arguments.put(Boolean::class) {
+            it.toBoolean()
+        }
 
     }
 
